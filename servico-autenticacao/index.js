@@ -1,5 +1,8 @@
+// Em servico-autenticacao/index.js
 require('dotenv').config();
-const fastify = require('fastify')({ logger: true });
+const fastify = require('fastify')({
+    logger: true
+});
 
 fastify.register(require('@fastify/cors'));
 fastify.register(require('@fastify/helmet'));
