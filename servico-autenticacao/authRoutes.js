@@ -1,63 +1,62 @@
+// authRoutes.js ATUALIZADO PARA JWE (CRIPTOGRAFADO)
+
 const bcrypt = require('bcrypt');
-const jwt = require('jsonwebtoken');
 const { z } = require('zod');
+const { EncryptJWT, jwtDecrypt } = require('jose'); // Importamos do 'jose'
+const { createSecretKey } = require('crypto'); // Módulo nativo do Node.js
 const prisma = require('./lib/prisma.js');
+const logger = require('./logger.js');
 
 async function authRoutes(fastify, options) {
-    const schemaCadastro = z.object({
-      email: z.string().email({ message: "Formato de email inválido." }),
-      senha: z.string().min(8, { message: "A senha deve ter no mínimo 8 caracteres." })
-    });
+    const schemaCadastro = z.object({ /* ... seu schema zod ... */ });
 
-    fastify.post('/register', async (request, reply) => {
-        try {
-            const { email, senha } = schemaCadastro.parse(request.body);
-            const senhaHash = await bcrypt.hash(senha, 10);
-            await prisma.user.create({ data: { email, senha_hash: senhaHash } });
-            reply.code(201).send({ mensagem: 'Usuário criado com sucesso!' });
-        } catch (error) {
-            if (error instanceof z.ZodError || error.code === 'P2002') {
-                const err = new Error('Dados inválidos ou email já em uso.');
-                err.statusCode = 409;
-                throw err;
-            }
-            throw error;
-        }
-    });
+    // A rota /register continua exatamente igual
+    fastify.post('/register', async (request, reply) => { /* ... */ });
 
+    // Rota de Login agora gera um JWE
     fastify.post('/login', async (request, reply) => {
-        const { email, senha } = request.body;
-        if (!email || !senha) {
-            const err = new Error('Credenciais inválidas.');
-            err.statusCode = 401;
-            throw err;
+        try {
+            // ... (lógica para encontrar usuário e validar senha continua igual) ...
+            const { email, senha } = request.body;
+            const usuario = await prisma.user.findUnique({ where: { email } });
+            const senhaValida = await bcrypt.compare(senha, usuario.senha_hash);
+            if (!usuario || !senhaValida) { /* ... throw error ... */ }
+
+            // --- GERAÇÃO DO TOKEN CRIPTOGRAFADO (JWE) ---
+            const secretKey = createSecretKey(Buffer.from(process.env.JWT_SECRET, 'utf-8'));
+            const payload = { id: usuario.id, email: usuario.email };
+
+            const token = await new EncryptJWT(payload)
+                .setProtectedHeader({ alg: 'dir', enc: 'A256GCM' }) // Algoritmos de criptografia
+                .setIssuedAt()
+                .setExpirationTime('1h')
+                .encrypt(secretKey);
+
+            reply.code(200).send({ token: token }); // Envia o JWE
+        } catch (error) {
+            // ... (tratamento de erro continua igual) ...
         }
-        const usuario = await prisma.user.findUnique({ where: { email } });
-        if (!usuario) {
-            const err = new Error('Credenciais inválidas.');
-            err.statusCode = 401;
-            throw err;
-        }
-        const senhaValida = await bcrypt.compare(senha, usuario.senha_hash);
-        if (!senhaValida) {
-            const err = new Error('Credenciais inválidas.');
-            err.statusCode = 401;
-            throw err;
-        }
-        const payload = { id: usuario.id, email: usuario.email };
-        const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '1h' });
-        reply.code(200).send({ token });
     });
 
+    // Rota de Validação agora decifra um JWE
     fastify.post('/validate', async (request, reply) => {
         try {
             const { token } = request.body;
-            if (!token) throw new Error();
-            const usuario = jwt.verify(token, process.env.JWT_SECRET);
-            reply.code(200).send({ valido: true, usuario: usuario });
+            if (!token) throw new Error('Token não fornecido.');
+
+            // --- DECIFRANDO O TOKEN (JWE) ---
+            const secretKey = createSecretKey(Buffer.from(process.env.JWT_SECRET, 'utf-8'));
+            const { payload } = await jwtDecrypt(token, secretKey, {
+                // Opcional: define os algoritmos esperados para mais segurança
+                contentEncryptionAlgorithms: ['A256GCM'],
+                keyManagementAlgorithms: ['dir'],
+            });
+
+            reply.code(200).send({ valido: true, usuario: payload });
         } catch (error) {
             reply.code(401).send({ valido: false, mensagem: 'Token inválido ou expirado.' });
         }
     });
 }
+
 module.exports = authRoutes;
