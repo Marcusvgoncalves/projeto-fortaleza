@@ -1,0 +1,12 @@
+# Ignorar todas as pastas node_modules de todos os serviços
+node_modules/
+
+# Ignorar todos os arquivos de ambiente de todos os serviços
+.env
+
+# Ignorar arquivos de banco de dados SQLite (legado)
+*.db
+*.db-journal
+
+# Ignorar dados do contêiner do Docker
+postgres-data/
