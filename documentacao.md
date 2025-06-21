@@ -16,7 +16,7 @@ graph TD
         A[Usuário Final]
         B[Desenvolvedor]
     end
-
+    
     subgraph "Perímetro de Segurança"
         C(VPN<br>WireGuard/OpenVPN)
         D(WAF<br>Nginx + ModSecurity)
