@@ -1,59 +1,60 @@
-// Em servico-autenticacao/index.js - VERSÃO FINAL COM O TRADUTOR
+// Em servico-autenticacao/index.js - VERSÃO FINALÍSSIMA
+require('dotenv').config();
+const fastify = require('fastify')({ logger: true });
+const fastifyPassport = require('@fastify/passport');
+const fastifySecureSession = require('@fastify/secure-session');
 
- require('dotenv').config();
- const fastify = require('fastify')({ logger: true });
- const fastifyPassport = require('@fastify/passport');
- const fastifySecureSession = require('@fastify/secure-session');
+require('./passport-setup.js');
 
- // Executa nosso arquivo de configuração da estratégia do Google
- require('./passport-setup.js');
+fastify.register(require('@fastify/express'));
+fastify.register(fastifySecureSession, {
+    secret: 'EsteEhUmSegredoDeExatos32Bytes!',
+    salt: 'EsteEhUmSalt16B!',
+});
 
- // ADICIONA A CAMADA DE COMPATIBILIDADE COM EXPRESS
- fastify.register(require('@fastify/express'));
+fastify.register(fastifyPassport.initialize());
+fastify.register(fastifyPassport.secureSession());
 
- // Registra o plugin de sessão segura
- fastify.register(fastifySecureSession, {
-     secret: 'AquiEstaUmSegredoDeExatos32Bytes', // 32 caracteres
-     salt: 'EsteEhUmSalt16B!'               // 16 caracteres
- });
+fastify.register(require('@fastify/cors'));
+fastify.register(require('@fastify/helmet'));
 
- // Registra e inicializa o Passport
- fastify.register(fastifyPassport.initialize());
- fastify.register(fastifyPassport.secureSession());
+// Registra nossas rotas de /register e /login
+fastify.register(require('./authRoutes'), { prefix: '/auth' });
 
- // Registra os plugins de segurança
- fastify.register(require('@fastify/cors'));
- fastify.register(require('@fastify/helmet'));
+// --- ROTAS DO GOOGLE DIRETAMENTE AQUI ---
+fastify.get('/auth/google', fastifyPassport.authenticate('google', { scope: ['profile', 'email'] }));
 
- // Registra nosso plugin de rotas com o prefixo correto
- fastify.register(require('./authRoutes'), { prefix: '/auth' });
+fastify.get('/auth/google/callback', 
+    { preHandler: fastifyPassport.authenticate('google', { session: false }) },
+    async (request, reply) => {
+        try {
+            const usuario = request.user;
+            if (!usuario) throw new Error('Usuário não encontrado após callback do Google.');
+            
+            const payload = { id: usuario.id, email: usuario.email };
+            const secretKey = createSecretKey(Buffer.from(process.env.JWT_SECRET, 'utf-8'));
+            const token = await new EncryptJWT(payload)
+                .setProtectedHeader({ alg: 'dir', enc: 'A256GCM' })
+                .setIssuedAt().setExpirationTime('1h')
+                .setIssuer('urn:exemplo:issuer').setAudience('urn:exemplo:audience')
+                .encrypt(secretKey);
 
- // Rota de Health Check
- fastify.get('/', async (request, reply) => {
-     return { status: 'ok', servico: 'autenticacao', timestamp: new Date().toISOString() };
- });
+            // Em uma aplicação real, aqui você redirecionaria para o seu frontend,
+            // passando o token na URL. Ex: `reply.redirect(`http://meufrontend.com/login-sucesso?token=${token}`)`
+            // Por agora, apenas exibimos o token.
+            reply.code(200).send({ token });
+        } catch (error) {
+            fastify.log.error(error, "Erro ao gerar token JWE após callback do Google");
+            reply.code(500).send({ message: "Erro ao processar o login." });
+        }
+    }
+);
 
- // Rota para ignorar o favicon
- fastify.get('/favicon.ico', async (request, reply) => {
-     return reply.code(204).send();
- });
+// ... (seu Health Check e Error Handler continuam aqui) ...
+ fastify.get('/', async (request, reply) => { /* ... */ });
+ fastify.get('/favicon.ico', async (request, reply) => { /* ... */ });
+ fastify.setErrorHandler(function (error, request, reply) { /* ... */ });
 
- // Adiciona o Error Handler do Fastify
- fastify.setErrorHandler(function (error, request, reply) {
-     fastify.log.error(error);
-     reply.status(error.statusCode || 500).send({
-         error: error.name || 'Internal Server Error',
-         message: error.message
-     });
- });
 
- const start = async () => {
-     try {
-         await fastify.listen({ port: 3001 });
-     } catch (err) {
-         fastify.log.error(err);
-         process.exit(1);
-     }
- };
-
- start();
+const start = async () => { /* ... */ };
+start();

@@ -1,10 +1,10 @@
-// authRoutes.js - VERSÃO COM SINTAXE DO FASTIFY CORRIGIDA
+// authRoutes.js - VERSÃO FINAL COM SINTAXE CORRIGIDA PARA O PASSPORT
 
 const bcrypt = require('bcrypt');
 const { EncryptJWT, jwtDecrypt } = require('jose');
 const { createSecretKey } = require('crypto');
 const { z } = require('zod');
-const passport = require('passport');
+//const passport = require('passport');
 const prisma = require('./lib/prisma.js');
 
 async function authRoutes(fastify, options) {
@@ -14,46 +14,53 @@ async function authRoutes(fastify, options) {
         senha: z.string().min(8, { message: "A senha deve ter no mínimo 8 caracteres." })
     });
 
-    // Rotas /register e /login (sem alterações)
+    // Rotas de login e registro (sem alterações)
     fastify.post('/register', async (request, reply) => { /* ... */ });
     fastify.post('/login', async (request, reply) => { /* ... */ });
     fastify.post('/validate', async (request, reply) => { /* ... */ });
 
+    // --- MUDANÇA NA DEFINIÇÃO DAS ROTAS DO GOOGLE ---
+
     // Rota: GET /google (Início do fluxo OAuth)
-    fastify.get(
-        '/google',
-        // AQUI ESTÁ A CORREÇÃO: passport.authenticate está dentro de um array
-        { preValidation: [passport.authenticate('google', { scope: ['profile', 'email'] })] },
-        async (request, reply) => {
-            // Este handler pode ficar vazio, pois o middleware do passport fará o redirecionamento
-        }
-    );
+    // Passamos o middleware do passport diretamente como o handler da rota
+    fastify.get('/google', passport.authenticate('google', { scope: ['profile', 'email'] }));
 
     // Rota: GET /google/callback (Retorno do Google)
+    // Usamos um hook 'preValidation' para o passport, e depois nosso handler executa
     fastify.get(
         '/google/callback',
-        // AQUI ESTÁ A CORREÇÃO: passport.authenticate está dentro de um array
-        { preValidation: [passport.authenticate('google', { 
-            failureRedirect: '/login-failed', // Redireciona se o usuário negar
-            session: false 
-        })] },
+        { 
+            preValidation: passport.authenticate('google', { 
+                session: false // Importante: não usaremos sessões do passport, apenas o resultado
+            }) 
+        },
         async (request, reply) => {
-            // Se chegou aqui, o Google autenticou e nosso 'passport-setup' rodou.
-            // O usuário está em request.user. Agora, geramos nosso JWE para ele.
-            const usuario = request.user;
-            const payload = { id: usuario.id, email: usuario.email };
-            const secretKey = createSecretKey(Buffer.from(process.env.JWT_SECRET, 'utf-8'));
-            const token = await new EncryptJWT(payload)
-                .setProtectedHeader({ alg: 'dir', enc: 'A256GCM' })
-                .setIssuedAt()
-                .setExpirationTime('1h')
-                .setIssuer('urn:exemplo:issuer')
-                .setAudience('urn:exemplo:audience')
-                .encrypt(secretKey);
+            try {
+                // Se chegou aqui, o Google autenticou e nosso 'passport-setup' rodou.
+                // O usuário está em request.user. Agora, geramos nosso JWE para ele.
+                const usuario = request.user;
+                if (!usuario) {
+                    // Caso de segurança: se o passport não anexar um usuário por algum motivo
+                    throw new Error('Falha na autenticação do Google.');
+                }
 
-            // Em uma aplicação real, redirecionaríamos para o frontend com o token.
-            // Por agora, vamos apenas exibir o token.
-            reply.code(200).send({ token: token });
+                const payload = { id: usuario.id, email: usuario.email };
+                const secretKey = createSecretKey(Buffer.from(process.env.JWT_SECRET, 'utf-8'));
+                const token = await new EncryptJWT(payload)
+                    .setProtectedHeader({ alg: 'dir', enc: 'A256GCM' })
+                    .setIssuedAt()
+                    .setExpirationTime('1h')
+                    .setIssuer('urn:exemplo:issuer')
+                    .setAudience('urn:exemplo:audience')
+                    .encrypt(secretKey);
+
+                // Em uma aplicação real, redirecionaríamos para o frontend com o token.
+                // Por agora, vamos apenas exibir o token.
+                reply.code(200).send({ token: token });
+            } catch (error) {
+                fastify.log.error(error);
+                reply.code(500).send({ message: 'Erro ao processar o login do Google.' });
+            }
         }
     );
 }
