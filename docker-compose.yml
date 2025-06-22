@@ -1,0 +1,46 @@
+# Em projeto-fortaleza/docker-compose.yml
+
+version: '3.8'
+
+services:
+  # Serviço do Banco de Dados (continua o mesmo)
+  db:
+    image: postgres:16-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: seu_usuario_dev
+      POSTGRES_PASSWORD: sua_senha_super_segura
+      POSTGRES_DB: agenda_secreta_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - ./postgres-data:/var/lib/postgresql/data
+
+  # NOVO: Serviço de Autenticação
+  auth-service:
+    # 'build' diz ao Docker para construir a imagem a partir do Dockerfile nesta pasta
+    build: ./servico-autenticacao
+    ports:
+      - "3001:3001"
+    # Passa as variáveis de ambiente do nosso .env para o contêiner
+    # Criaremos um .env na raiz para o docker-compose ler
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - JWT_SECRET=${JWT_SECRET}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+    # Garante que o banco de dados inicie antes deste serviço
+    depends_on:
+      - db
+
+  # NOVO: Serviço de Segredos
+  secrets-service:
+    build: ./servico-segredos
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - AUTH_SERVICE_URL=${AUTH_SERVICE_URL}
+    depends_on:
+      - db
+      - auth-service # Garante que o serviço de auth inicie antes
