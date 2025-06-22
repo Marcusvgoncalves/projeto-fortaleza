@@ -1,54 +1,59 @@
-// Em servico-autenticacao/passport-setup.js
+// Em servico-autenticacao/passport-setup.js - VERSÃO FINAL E CORRETA
 
 const passport = require('passport');
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
-const prisma = require('./lib/prisma.js');
+const prisma = require('./lib/prisma.js'); // Garanta que o caminho './lib/prisma.js' está correto
 
+// Esta é a linha que "ensina" o Passport.
 passport.use(
     new GoogleStrategy(
         {
             clientID: process.env.GOOGLE_CLIENT_ID,
             clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-            callbackURL: 'http://localhost:3001/auth/google/callback', // URL completa
-            proxy: true // A "dica" crucial para o Passport
+            callbackURL: 'http://localhost:3001/auth/google/callback',
+            proxy: true
         },
-    // ... função de callback
-
-        // Esta função é o "coração" da lógica. Ela roda DEPOIS que o Google autentica o usuário.
+        // Esta função de callback é executada DEPOIS que o Google nos confirmar o usuário
         async (accessToken, refreshToken, profile, done) => {
             try {
-                // Pegamos o email principal do perfil que o Google nos enviou
-                const email = profile.emails[0].value;
+                // Pegamos o email principal que o Google nos forneceu
+                const email = profile.emails && profile.emails[0] ? profile.emails[0].value : null;
 
-                // 1. Procuramos se um usuário com este email já existe no NOSSO banco de dados
+                if (!email) {
+                    // Se o perfil do Google não tiver um email, não podemos prosseguir
+                    return done(new Error("Não foi possível obter o email do Google."), null);
+                }
+
+                // Procuramos se um usuário com este email já existe no nosso banco de dados
                 let usuario = await prisma.user.findUnique({
                     where: { email: email },
                 });
 
-                // 2. Se o usuário NÃO existe, nós o criamos
+                // Se o usuário NÃO existe, nós o criamos
                 if (!usuario) {
                     usuario = await prisma.user.create({
                         data: {
                             email: email,
-                            // Não temos senha, então guardamos um valor para indicar que é uma conta Google
+                            // Guardamos um valor para indicar que é uma conta Google, sem senha local
                             senha_hash: 'google_auth' 
                         }
                     });
                 }
 
-                // 3. Se o usuário existe ou foi criado agora, passamos ele para o Passport.
-                // O 'done' é como o 'next' do middleware, sinalizando que terminamos com sucesso.
-                done(null, usuario);
+                // Se o usuário existe ou foi criado agora, passamos ele para o Passport.
+                // 'done' sinaliza que terminamos com sucesso e retorna o objeto do usuário.
+                return done(null, usuario);
 
             } catch (error) {
-                // Se ocorrer qualquer erro, passamos o erro para o Passport
-                done(error, null);
+                // Se ocorrer qualquer erro no banco de dados, etc.
+                return done(error, null);
             }
         }
     )
 );
 
 // Estas duas funções são necessárias para o Passport gerenciar a sessão do usuário
+// durante o processo de redirecionamento.
 passport.serializeUser((user, done) => {
     done(null, user.id);
 });

@@ -1,139 +1,46 @@
-# Documentação do Projeto: Fortaleza Secreta
+# Projeto Fortaleza: Arquitetura de Microsserviços Segura
 
-## 1\. Visão Geral do Projeto
+## 1. Visão Geral do Projeto
 
-O "Fortaleza Secreta" é uma aplicação Full-Stack completa que evoluiu de uma API monolítica simples para uma arquitetura de microsserviços robusta e segura. O projeto serve como um sistema de "agenda de segredos" multiusuário, onde cada usuário pode gerenciar suas próprias notas de forma segura e isolada.
+O "Projeto Fortaleza" é uma aplicação Full-Stack desenvolvida como parte de um plano de estudos avançado. O objetivo é construir um sistema robusto e seguro, evoluindo de uma aplicação monolítica para uma arquitetura de microsserviços.
 
-A jornada de desenvolvimento abrangeu desde conceitos básicos de APIs até tópicos avançados de segurança, arquitetura de software, infraestrutura com Docker e práticas de desenvolvimento profissional como testes automatizados, logging e migrations de banco de dados.
+O sistema consiste em uma "agenda de segredos" onde usuários podem se autenticar e gerenciar suas próprias notas de forma segura e isolada.
 
-## 2\. Arquitetura Final (Microsserviços)
+Atualmente, a arquitetura está em transição, com um serviço de autenticação independente e um serviço de segredos.
 
-A arquitetura final é composta por múltiplos serviços independentes que se comunicam via API, com um perímetro de segurança definido por um proxy reverso.
+## 2. Arquitetura em Andamento
 
-```mermaid
-graph TD
-    subgraph "Internet"
-        A[Usuário Final]
-        B[Desenvolvedor]
-    end
-    
-    subgraph "Perímetro de Segurança"
-        C(VPN<br>WireGuard/OpenVPN)
-        D(WAF<br>Nginx + ModSecurity)
-    end
-    
-    subgraph "Nuvem / Infraestrutura Docker"
-        E[Serviço de Autenticação<br>(Fastify)]
-        F[Serviço de Segredos<br>(Fastify)]
-        G[(Banco de Dados<br>PostgreSQL)]
-    end
+A arquitetura atual consiste em dois microsserviços principais rodando em contêineres Docker, com um banco de dados PostgreSQL centralizado.
 
-    A -- Requisição HTTP --> D;
-    D -- Tráfego Filtrado --> E;
-    D -- Tráfego Filtrado --> F;
-    F -- Validação de Token (API Call) --> E;
-    E -- Acesso ao DB --> G;
-    F -- Acesso ao DB --> G;
-    B -- Acesso Administrativo Seguro --> C;
-    C -- Túnel Seguro --> G;
-```
+* **servico-autenticacao (Porta 3001):** Um microsserviço dedicado, construído em Fastify, responsável por todas as operações de identidade:
+    * Cadastro de usuários com email e senha.
+    * Hashing de senhas com `bcrypt`.
+    * Login com email/senha e emissão de tokens de sessão seguros (JWE).
+    * (Em desenvolvimento) Autenticação federada com OAuth 2.0.
+    * Validação de tokens para outros serviços.
 
-## 3\. Tecnologias e Ferramentas Utilizadas
+* **servico-segredos (Porta 3000):** O serviço principal da aplicação, responsável pela lógica de negócio.
+    * Gerenciamento completo de "segredos" (CRUD).
+    * Delega toda a autenticação e autorização para o `servico-autenticacao` através de chamadas de API internas.
 
-  * **Backend:**
+* **Banco de Dados (PostgreSQL em Docker):** Um único banco de dados que serve aos dois microsserviços, com tabelas gerenciadas pelo Prisma e por um sistema de `migrations`.
 
-      * **Linguagem:** Node.js
-      * **Framework Web:** Express.js (no monolito inicial), Fastify (nos microsserviços)
-      * **Banco de Dados:** PostgreSQL (em produção), SQLite (na fase de aprendizado)
-      * **ORM / Acesso ao DB:** Prisma
-      * **Autenticação:** JWT (JSON Web Tokens), `bcrypt` para hashing de senhas
-      * **Segurança:** `helmet`, `express-rate-limit`, `cors`
-      * **Validação:** `zod`
-      * **Logging:** `winston`
+## 3. Tecnologias e Ferramentas
 
-  * **Frontend:**
+* **Backend:** Node.js, Fastify
+* **Banco de Dados:** PostgreSQL (via Docker)
+* **ORM & Migrations:** Prisma
+* **Segurança:** JWE (com `jose`), `bcrypt`, `helmet`, `express-rate-limit` (no monolito)
+* **Testes:** Jest, Supertest
+* **Logging:** Winston
+* **Validação:** Zod
+* **Infraestrutura:** Docker, Docker Compose
+* **Versionamento:** Git, GitHub
 
-      * HTML5, CSS3, JavaScript (ES6+), `fetch` API
+## 4. Próximos Passos Planejados
 
-  * **Infraestrutura & DevOps:**
-
-      * **Containerização:** Docker, Docker Compose
-      * **Versionamento:** Git, GitHub
-      * **Testes:** Jest, Supertest
-      * **Utilitários:** `cross-env`, `dotenv`
-
-## 4\. Estrutura de Pastas Final
-
-```
-projeto-fortaleza/
-|-- docker-compose.yml
-|-- .gitignore
-|
-|-- servico-autenticacao/
-|   |-- prisma/
-|   |   |-- schema.prisma
-|   |   +-- migrations/
-|   |-- lib/
-|   |   +-- prisma.js
-|   |-- node_modules/
-|   |-- .env
-|   |-- authRoutes.js
-|   |-- logger.js
-|   +-- package.json
-|
-+-- servico-segredos/
-    |-- public/
-    |   |-- index.html
-    |   |-- style.css
-    |   +-- script.js
-    |-- prisma/
-    |-- lib/
-    |-- node_modules/
-    |-- .env
-    |-- app.js
-    |-- index.js
-    |-- logger.js
-    |-- ... (e outros arquivos do monolito)
-```
-
-## 5\. Como Executar o Projeto (Guia de Setup)
-
-1.  **Pré-requisitos:** Ter Git, Node.js e Docker Desktop instalados.
-2.  **Clonar o Repositório:** `git clone <URL_DO_SEU_REPOSITORIO_NO_GITHUB>`
-3.  **Iniciar o Banco de Dados:**
-      * Navegue até a pasta raiz `projeto-fortaleza`.
-      * Execute `docker-compose up -d`. Isso iniciará o contêiner do PostgreSQL.
-4.  **Configurar o `servico-autenticacao`:**
-      * `cd servico-autenticacao`
-      * `npm install`
-      * `npx prisma migrate dev` (para criar as tabelas)
-5.  **Configurar o `servico-segredos`:**
-      * `cd ../servico-segredos`
-      * `npm install`
-      * `npx prisma migrate dev`
-6.  **Iniciar a Aplicação:**
-      * Abra um terminal e, de dentro de `servico-autenticacao`, rode `node index.js` (ou o comando de start).
-      * Abra um **segundo terminal** e, de dentro de `servico-segredos`, rode `node index.js`.
-      * Acesse o frontend no navegador.
-
-## 6\. Código-Fonte Completo dos Arquivos Principais
-
-*(Devido ao tamanho e complexidade de colar todos os arquivos aqui, esta seção conteria os códigos finais que desenvolvemos. Você já os tem em seu projeto local e no seu repositório GitHub, que é a melhor "fonte da verdade" para o código).*
-
------
-
-## 7\. Como Transformar em PDF
-
-1.  **Usando o VS Code:**
-
-      * Copie todo este texto que eu gerei.
-      * Crie um novo arquivo no seu VS Code chamado `DOCUMENTACAO.md`.
-      * Cole o texto e salve.
-      * Instale uma extensão chamada **"Markdown PDF"** no VS Code.
-      * Com o arquivo `.md` aberto, clique com o botão direito e escolha a opção "Markdown PDF: Export (pdf)".
-
-2.  **Usando Ferramentas Online:**
-
-      * Copie todo este texto.
-      * Busque no Google por "Markdown to PDF online".
-      * Cole o texto em um dos sites (como [md2pdf.netlify.app](https://www.google.com/search?q=https://md2pdf.netlify.app/)) e baixe o arquivo PDF gerado.
+1.  **Finalizar a implementação do OAuth 2.0** usando uma nova estratégia de biblioteca.
+2.  **Refatorar o `servico-segredos`** para consumir o `servico-autenticacao`.
+3.  **Containerizar os microsserviços** com Dockerfiles e orquestrar com `docker-compose`.
+4.  **Implementar um Perímetro de Segurança** com um Reverse Proxy (Nginx) e um WAF (ModSecurity).
+5.  **Configurar uma VPN** (WireGuard/OpenVPN) para acesso administrativo seguro.
