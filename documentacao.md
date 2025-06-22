@@ -1,46 +1,65 @@
-# Projeto Fortaleza: Arquitetura de Microsserviços Segura
+Documentação Final: Projeto Fortaleza
+1. Visão Geral
+O "Projeto Fortaleza" é uma arquitetura de microsserviços projetada para ser segura e escalável, utilizando Docker para orquestração. O sistema é composto por um serviço de autenticação, um serviço de gerenciamento de segredos, um Web Application Firewall (WAF) como ponto único de entrada, e um banco de dados compartilhado.
 
-## 1. Visão Geral do Projeto
+2. Desenho da Arquitetura Final
 
-O "Projeto Fortaleza" é uma aplicação Full-Stack desenvolvida como parte de um plano de estudos avançado. O objetivo é construir um sistema robusto e seguro, evoluindo de uma aplicação monolítica para uma arquitetura de microsserviços.
+O fluxo de uma requisição do usuário até o banco de dados pode ser visualizado da seguinte forma:
 
-O sistema consiste em uma "agenda de segredos" onde usuários podem se autenticar e gerenciar suas próprias notas de forma segura e isolada.
+[ Usuário / Navegador ]
+         |
+         | HTTP/HTTPS (Porta 8080)
+         v
++--------------------------------+
+|     Contêiner: WAF (Nginx)     |
+|   (Módulo ModSecurity Ativado)   |
+|                                |
+|   /auth/* --+   /segredos/* --+
++--------------------------------+
+               |                 |
+ <------ Rede Docker Interna ------>
+ |                 |
+ v                 v
++------------------+  +------------------+
+| Contêiner:       |  | Contêiner:       |
+| auth-service     |  | secrets-service  |
+| (Node.js/Fastify)|  | (Node.js/Fastify)|
++------------------+  +------------------+
+         |                 |
+         |<- Conexão ->|
+         |   Prisma      |
+         v                 v
++--------------------------------+
+|    Contêiner: db (PostgreSQL)  |
+|     (Volume: postgres-data)    |
++--------------------------------+
+3. Componentes da Arquitetura
 
-Atualmente, a arquitetura está em transição, com um serviço de autenticação independente e um serviço de segredos.
+waf (Nginx + ModSecurity)
 
-## 2. Arquitetura em Andamento
+Propósito: Ponto único de entrada para todo o tráfego. Atua como Proxy Reverso e Web Application Firewall.
+Tecnologia: Nginx, ModSecurity com o OWASP Core Rule Set.
+Função: Inspeciona todas as requisições em busca de padrões de ataque (SQL Injection, XSS, etc.) e bloqueia as maliciosas. Redireciona o tráfego legítimo para o microsserviço apropriado com base na URL (/auth ou /segredos).
+auth-service (Serviço de Autenticação)
 
-A arquitetura atual consiste em dois microsserviços principais rodando em contêineres Docker, com um banco de dados PostgreSQL centralizado.
+Propósito: Gerenciar a identidade dos usuários, incluindo registro local e login federado com o Google (OAuth 2.0).
+Tecnologia: Node.js, Fastify, Prisma, Zod (validação), Bcrypt (hashing), JOSE (criação de tokens JWE).
+Endpoints Principais:
+POST /auth/register: Cadastro de novos usuários.
+POST /auth/login: Login de usuários com email e senha.
+GET /auth/google: Inicia o fluxo de autenticação com o Google.
+GET /auth/google/callback: Recebe a resposta do Google e finaliza o login.
+secrets-service (Serviço de Segredos)
 
-* **servico-autenticacao (Porta 3001):** Um microsserviço dedicado, construído em Fastify, responsável por todas as operações de identidade:
-    * Cadastro de usuários com email e senha.
-    * Hashing de senhas com `bcrypt`.
-    * Login com email/senha e emissão de tokens de sessão seguros (JWE).
-    * (Em desenvolvimento) Autenticação federada com OAuth 2.0.
-    * Validação de tokens para outros serviços.
+Propósito: API protegida para operações de CRUD (Criar, Ler, Atualizar, Deletar) em "segredos" de usuários.
+Tecnologia: Node.js, Fastify, Prisma.
+Segurança: Valida o token JWE em cada requisição para garantir que o usuário está autenticado e autorizado.
+db (Banco de Dados)
 
-* **servico-segredos (Porta 3000):** O serviço principal da aplicação, responsável pela lógica de negócio.
-    * Gerenciamento completo de "segredos" (CRUD).
-    * Delega toda a autenticação e autorização para o `servico-autenticacao` através de chamadas de API internas.
+Propósito: Armazenamento persistente para os dados dos usuários e segredos.
+Tecnologia: PostgreSQL rodando em um contêiner Docker.
+Persistência: Utiliza um volume Docker (postgres-data) para garantir que os dados não sejam perdidos ao reiniciar os contêineres.
+4. Orquestração
 
-* **Banco de Dados (PostgreSQL em Docker):** Um único banco de dados que serve aos dois microsserviços, com tabelas gerenciadas pelo Prisma e por um sistema de `migrations`.
-
-## 3. Tecnologias e Ferramentas
-
-* **Backend:** Node.js, Fastify
-* **Banco de Dados:** PostgreSQL (via Docker)
-* **ORM & Migrations:** Prisma
-* **Segurança:** JWE (com `jose`), `bcrypt`, `helmet`, `express-rate-limit` (no monolito)
-* **Testes:** Jest, Supertest
-* **Logging:** Winston
-* **Validação:** Zod
-* **Infraestrutura:** Docker, Docker Compose
-* **Versionamento:** Git, GitHub
-
-## 4. Próximos Passos Planejados
-
-1.  **Finalizar a implementação do OAuth 2.0** usando uma nova estratégia de biblioteca.
-2.  **Refatorar o `servico-segredos`** para consumir o `servico-autenticacao`.
-3.  **Containerizar os microsserviços** com Dockerfiles e orquestrar com `docker-compose`.
-4.  **Implementar um Perímetro de Segurança** com um Reverse Proxy (Nginx) e um WAF (ModSecurity).
-5.  **Configurar uma VPN** (WireGuard/OpenVPN) para acesso administrativo seguro.
+Tecnologia: Docker Compose.
+Função: O arquivo docker-compose.yml define, configura e conecta todos os serviços acima, criando uma rede interna para comunicação segura e gerenciando variáveis de ambiente (como chaves de API e strings de conexão com o banco).
